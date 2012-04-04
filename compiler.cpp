@@ -71,7 +71,7 @@ void asm_simple_expn(char from[]);
 node* asm_tprime(char from[]);
 
 node* t=NULL;
-int linerr=1,openbrac=0,closebrac=0; //parser counteres for scope mismatches
+int linerr=1,openbrac=0,closebrac=0; //parser counters for scope mismatches
 int dec_label_count=0, loop_label_count=0;
 // counters for assembly labels for decision and looping statements
 
