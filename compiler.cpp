@@ -25,6 +25,10 @@ void statement_list();
 int listundec();
 void skip();
 
+void asm_declarations();
+void asm_statement();
+void asm_statement_list();
+
 FILE *f,*f1,*f2,*f3,*f4,*f5,*f6,*f7;
 char name[200]="E:\\B1-75\\LAB2\\test.cpp"; //the source file
 char output[200]="E:\\B1-75\\compiled.cpp";
@@ -62,8 +66,14 @@ int verified; //check if an identifier has been declared on not
 struct node* next;
 };
 
+node* asm_term(char from[]);
+void asm_simple_expn(char from[]);
+node* asm_tprime(char from[]);
+
 node* t=NULL;
-int linerr=1,openbrac=0,closebrac=0;
+int linerr=1,openbrac=0,closebrac=0; //parser counteres for scope mismatches
+int dec_label_count=0, loop_label_count=0;
+// counters for assembly labels for decision and looping statements
 
 node* getnode(){
 node* p=(node*)malloc(sizeof(node));
@@ -1394,7 +1404,7 @@ while(strcmp(t->name,"}")!=0) t=lex(f1);
 
 }//skip() close
 
-void program(){
+int program(){
 //cout<<"program called ";
 char errmsg[]="Syntax error";
 
@@ -1412,16 +1422,21 @@ statement_list();
 match("}",errmsg);
 
 int ret=listundec();
-if(ret==0) cout<<"No syntax errors\n";
+if(ret==0){
+cout<<"No syntax errors\n";
+return 1;}
+return 0;
 
 }//program() close
 
-void parser(){
+int parser(){
 f1=fopen(output,"r"); //parser will open file and lex will return next token
 
 t=lex(f1);
 
-program();
+int ret=program();
+fclose(f1);
+return ret;
 
 //getch();
 }//parser() close
@@ -1446,6 +1461,506 @@ p=p->next;
 }//for close
 return flag;
 }//listundec() close
+
+
+void asm_error(char errmsg[]){
+cout<<errmsg<<" at line "<<linerr<<"\n";
+getch();
+exit(1);
+}
+
+int asm_match(char expectedtoken[],char errmsg[]){
+
+if(strcmp(tok,expectedtoken)==0){
+//cout<<t->name<<" ";
+t=lex(f1);
+return 1;}
+
+else asm_error(errmsg);
+return 0;
+}//asm_match() close
+
+void asm_factor(char from[]){
+//cout<<"Factor called ";
+char errmsg[]="Identifier or number expected";
+passspnew();
+
+if(strcmp(from,"expn")==0){ cout<<"mov ax,"; puts(t->name); asm_match(t->name,errmsg); }
+else if(strcmp(from,"seprime")==0 || strcmp(from,"tprime")==0 || strcmp(from,"eprime")==0)
+{ cout<<"mov bx,"; puts(t->name); asm_match(t->name,errmsg); }
+//else asm_error(errmsg);
+
+}//asm_factor() close
+
+
+node* asm_tprime(char from[]){
+//cout<<"tprime called ";
+char errmsg[]="Invalid expression";
+node* op=NULL;
+//tprime->mulop factor tprime
+
+passspnew();
+
+if(strcmp(t->name,"*")==0 || strcmp(t->name,"/")==0 || strcmp(t->name,"%")==0){
+op=t;
+asm_match(t->name,errmsg);}
+else return op;
+
+passspnew();
+
+asm_factor("tprime");
+
+asm_tprime(from);
+
+return op;
+}//tprime() close
+
+node* asm_eprime(){
+
+//cout<<"eprime called ";
+char errmsg[]="Unsupported relational operator";
+passspnew();
+node* op=NULL;
+
+if(strcmp(t->name,"!=")==0){ op=t; asm_match(t->name,errmsg);          }
+else if(strcmp(t->name,"==")==0){ op=t; asm_match(t->name,errmsg);    }
+else if(strcmp(t->name,"<=")==0){ op=t; asm_match(t->name,errmsg);   }
+else if(strcmp(t->name,">=")==0){ op=t; asm_match(t->name,errmsg);  }
+else if(strcmp(t->name,">")==0){ op=t; asm_match(t->name,errmsg);  }
+else if(strcmp(t->name,"<")==0){ op=t; asm_match(t->name,errmsg); }
+//if(strcmp(t->name,"!=")==0) match(t->name,errmsg);
+
+else return op;
+
+asm_simple_expn("eprime");
+return op;
+}//asm_eprime() close
+
+
+node* asm_seprime(){
+//cout<<"seprime called ";
+char errmsg[]="Invalid expression";
+
+passspnew();
+node* op=NULL;
+//seprime->addop term seprime
+//cout<<"X"<<t->name<<"X";
+if(strcmp(t->name,"-")==0 || strcmp(t->name,"+")==0){
+//if(strcmp(t->name,"+")==0) cout<<"add ax,bx\n";
+//if(strcmp(t->name,"-")==0) cout<<"sub ax,bx\n";
+op=t;
+asm_match(t->name,errmsg);}
+else return op;
+//if(strcmp(t->name,"+")==0) match(t->name,errmsg);
+//else if(strcmp(t->name,"-")==0) match(t->name,errmsg);
+//else return;
+
+asm_term("seprime");
+
+passspnew();
+
+asm_seprime();
+return op;
+
+}//asm_seprime() close
+
+
+node* asm_term(char from[]){
+//cout<<"term called ";
+
+asm_factor(from);
+
+node* op=asm_tprime(from);
+return op;
+}//asm_term() close
+
+
+void asm_simple_expn(char from[]){
+//cout<<"simple_expn called ";
+
+node* op1=asm_term(from);
+
+node* op2=asm_seprime();
+
+if(op1==NULL & op2==NULL) return;
+
+if(op1!=NULL & op2==NULL){
+//cout<<"mul or div case\n";
+if(op1->name[0]=='*')
+cout<<"mul bx\n";
+else if(op1->name[0]=='/')
+cout<<"div bx\n";
+else if(op1->name[0]=='%')
+cout<<"div bx\n";
+cout<<"mov ax,dx\n";
+}
+
+else if(op1==NULL & op2!=NULL){
+if(op2->name[0]=='+')
+cout<<"add bx\n";
+else if(op2->name[0]=='-')
+cout<<"sub bx\n";
+//cout<<"add or sub case\n";
+}
+
+//op1 and op2 both can be null e.g. b=a;
+			      //b=a+-10
+			      //b=a*/10
+}//asm_simple_expn() close
+
+node* asm_expn(){
+//cout<<"expn called ";
+//cout<<"expn called\n";
+passspnew();
+
+asm_simple_expn("expn");
+
+node* op=asm_eprime();
+
+return op;
+//passspnew();
+
+}//asm_expn() close
+
+
+void asm_assign_statement(){
+//cout<<"assign_statement called ";
+char errmsg[]="Incorrect assignment";
+char msg[50];
+strcpy(msg,"mov ");
+strcat(msg,t->name);
+strcat(msg,",ax");
+//strcat(msg,",ax");
+asm_match(t->name,errmsg);
+
+//t=lex(f1);
+passspnew();
+
+asm_match("=",errmsg);
+passspnew();
+
+asm_expn();
+puts(msg);
+//memset(msg,'\0')
+match(";",errmsg);
+
+}//asm_assign_statement()
+
+
+void asm_dprime(){
+//cout<<"dprime called ";
+char errmsg[]="Invalid conditional statement";
+passspnew();
+//cout<<"X"<<t->name<<"X";
+
+if(strcmp(t->name,"else")==0) asm_match(t->name,errmsg);
+else return;
+
+asm_statement();
+
+}//dprime() close
+
+
+void asm_decision_statement(){
+//cout<<"decision statement called ";
+char errmsg[]="Invalid decision statement";
+asm_match(t->name,errmsg);
+
+passspnew();
+
+asm_match("(","( expected");
+
+node* op=asm_expn();
+
+cout<<"cmp ax,bx\n";
+if(op->name[0]=='>') cout<<"jle dec_label"<<dec_label_count<<endl;
+else if(op->name[0]=='<') cout<<"jge loop_label"<<++dec_label_count<<endl;
+else if(strcmp(op->name,">=")==0) cout<<"jl loop_label"<<++dec_label_count<<endl;
+else if(strcmp(op->name,"<=")==0) cout<<"jg loop_label"<<++dec_label_count<<endl;
+else if(strcmp(op->name,"==")==0) cout<<"jne loop_label"<<++dec_label_count<<endl;
+else if(strcmp(op->name,"!=")==0) cout<<"je loop_label"<<++dec_label_count<<endl;
+
+asm_match(")","( expected");
+
+asm_statement(); //statement inside if condition
+//match(";",errmsg);
+
+passspnew();
+cout<<"jmp dec_label"<<++dec_label_count<<endl;
+
+cout<<"dec_label"<<dec_label_count-1<<":\n";
+
+asm_dprime();
+
+cout<<"dec_label"<<dec_label_count<<":\n";
+dec_label_count++;
+}//decision_statement close
+
+void asm_assignloop_statement(){
+//cout<<"assignloop_statement called ";
+char errmsg[]="Incorrect assignment";
+asm_match(t->name,errmsg);
+
+//t=lex(f1);
+passspnew();
+
+asm_match("=",errmsg);
+passspnew();
+
+asm_expn();
+
+//match(";",errmsg);
+}
+
+
+void asm_loopfactor(){
+char errmsg[]="Identifier or number expected";
+passspnew();
+
+for(int i=0;i<strlen(t->name);i++)
+cout<<t->name[i];
+
+asm_match(t->name,errmsg);
+
+}//asm_loopfactor() close
+
+
+node* asm_loopeprime(){
+
+//cout<<"eprime called ";
+char errmsg[]="Unsupported relational operator";
+passspnew();
+node* op=NULL;
+
+if(strcmp(t->name,"!=")==0){ op=t; asm_match(t->name,errmsg);          }
+else if(strcmp(t->name,"==")==0){ op=t; asm_match(t->name,errmsg);    }
+else if(strcmp(t->name,"<=")==0){ op=t; asm_match(t->name,errmsg);   }
+else if(strcmp(t->name,">=")==0){ op=t; asm_match(t->name,errmsg);  }
+else if(strcmp(t->name,">")==0){ op=t; asm_match(t->name,errmsg);  }
+else if(strcmp(t->name,"<")==0){ op=t; asm_match(t->name,errmsg); }
+//if(strcmp(t->name,"!=")==0) match(t->name,errmsg);
+
+else return op;
+
+asm_loopfactor();
+return op;
+}//asm_loopeprime() close
+
+
+
+
+node* asm_loopexpn(){
+//cout<<"expn called ";
+//cout<<"expn called\n";
+passspnew();
+
+asm_loopfactor();
+cout<<",";
+node* op=asm_loopeprime();
+
+return op;
+//passspnew();
+
+}//asm_loopexpn() close
+
+
+
+
+void asm_looping_statement(){
+//cout<<"looping statement called ";
+char errmsg[]="Invalid looping statement";
+
+if(strcmp(t->name,"while")==0){
+asm_match(t->name,errmsg);
+
+asm_match("(","( expected");
+
+//node* op=asm_loopexpn();
+
+//cout<<"push ax\n";
+//cout<<"push bx\n";
+cout<<"looplabel"<<loop_label_count<<":\n";
+//cout<<"cmp ax,bx\n";
+
+cout<<"cmp ";
+node* op=asm_loopexpn();
+cout<<endl;
+
+if(op->name[0]=='>') cout<<"jle loop_label"<<++loop_label_count<<endl;
+else if(op->name[0]=='<') cout<<"jge loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,">=")==0) cout<<"jl loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,"<=")==0) cout<<"jg loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,"==")==0) cout<<"jne loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,"!=")==0) cout<<"je loop_label"<<++loop_label_count<<endl;
+
+asm_match(")",") expected");
+
+asm_statement();
+
+//cout<<"pop bx\n";
+//cout<<"pop ax\n";
+cout<<"jmp loop_label"<<loop_label_count-1<<endl;
+
+}
+
+else if(strcmp(t->name,"for")==0){
+asm_match(t->name,errmsg);
+
+asm_match("(","( expected");
+
+asm_assign_statement();
+
+cout<<"looplabel"<<loop_label_count<<":\n";
+cout<<"cmp ";
+node* op=asm_loopexpn();
+cout<<endl;
+
+if(op->name[0]=='>') cout<<"jle loop_label"<<++loop_label_count<<endl;
+else if(op->name[0]=='<') cout<<"jge loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,">=")==0) cout<<"jl loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,"<=")==0) cout<<"jg loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,"==")==0) cout<<"jne loop_label"<<++loop_label_count<<endl;
+else if(strcmp(op->name,"!=")==0) cout<<"je loop_label"<<++loop_label_count<<endl;
+
+asm_match(";","; expected");
+
+asm_assignloop_statement();
+
+asm_match(")",") expected");
+
+asm_statement();
+cout<<"jmp loop_label"<<loop_label_count-1<<endl;
+
+cout<<"loop_label"<<loop_label_count<<":\n";
+}
+
+}//asm_looping_statement() close
+
+
+
+void asm_statement(){
+
+//cout<<"statement called ";
+//char errmsg[]="Invalid statement";
+passspnew();
+
+if(t->type=='i'){ //assign statement
+asm_assign_statement();
+}//assign_statement close
+
+
+else if(strcmp(t->name,"if")==0){ //decision statement
+asm_decision_statement();
+}//decision statement close
+
+
+else if(strcmp(t->name,"while")==0 || strcmp(t->name,"for")==0){
+asm_looping_statement();
+}//looping statement close
+
+//else error(errmsg);
+
+}//asm_statement() close
+
+
+void asm_statement_list(){
+
+passspnew();
+
+if(t->type=='i' || strcmp(t->name,"if")==0 || strcmp(t->name,"for")==0 || strcmp(t->name,"while")==0){
+asm_statement();
+//match(";",errmsg);
+asm_statement_list();
+}
+else return;
+
+}//asm_statement_list() close
+
+
+void asm_id_list(){
+//cout<<"id_list called ";
+passspnew();
+char errmsg[]="Declaration syntax error";
+
+if(t->datatype=='i' | t->datatype=='c'){
+node* tt=t;
+cout<<tt->name;
+if(tt->datatype=='i') cout<< " DW 0\n";
+else if(tt->datatype=='c') cout<<" DB 0\n";
+
+asm_match(t->name,errmsg);
+
+if(strcmp(t->name,",")==0){
+
+asm_match(t->name,errmsg);
+
+asm_id_list();
+
+}//comma after id close
+
+else{ //id_list ends with a ;
+asm_match(";",errmsg);
+//else error(errmsg);
+}//else close
+
+}
+//else asm_error(errmsg); //corresponds to first token not being an identifier after "int "
+
+}//id_list() close
+
+
+void asm_declarations(){
+
+char errmsg[]="Incorrect declaration";
+passspnew();
+
+if(strcmp(t->name,"int")==0){ asm_match(t->name,errmsg);}
+else if(strcmp(t->name,"char")==0){ asm_match(t->name,errmsg);}
+else{
+cout<<"data ends\n";
+return;}
+passspnew(); //int a,b; (space required after datatype)
+
+asm_id_list();
+
+asm_declarations();
+
+}//asm_declarations() close
+
+
+void asm_program(){
+
+char errmsg[]="Syntax error\n";
+
+asm_match("main",errmsg);
+asm_match("(",errmsg);
+asm_match(")",errmsg);
+asm_match("{",errmsg);
+
+cout<<"data segment\n";
+
+asm_declarations();
+
+cout<<"code segment\nassume cs:code, ds:data\n";
+cout<<"start:\nmov ax,data\nmov ds,ax\n";
+
+asm_statement_list();
+cout<<"mov ah,4ch\n";
+cout<<"int 21h\n";
+cout<<"code ends\n";
+cout<<"end start\n";
+
+}//asm_program() close
+
+int gencode(){
+linerr=1;
+f1=fopen(output,"r");
+t=lex(f1);
+
+asm_program();
+fclose(f1);
+return 0;
+}//gencode() close
 
 void main(){
 clrscr();
@@ -1477,8 +1992,10 @@ cout<<"Lexical analysis complete. Press any key to generate symbol table\n";
 getch();
 populatetable(); //populate symbol table with tokens by reading files
 identifydatatypes(); //find datatype of identifiers and update their type & size
-displaytable();
+//displaytable();
 cout<<endl<<endl;
-parser();
+int ret=parser();
+//cout<<"Return value of parser:"<<ret<<endl<<endl;
+gencode();
 getch();
 }//main() close
